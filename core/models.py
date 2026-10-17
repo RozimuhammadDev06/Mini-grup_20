@@ -54,10 +54,10 @@ class User(AbstractUser):
         return self.username
 
 
-class Item(models.Model):
+class Product(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название")
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="items", verbose_name="Категория")
-    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name="items", verbose_name="Филиал")
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products", verbose_name="Категория")
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name="products", verbose_name="Филиал")
     desc = models.TextField(blank=True, null=True, verbose_name="Описание")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
     is_active = models.BooleanField(default=True, verbose_name="Активен")
@@ -110,9 +110,9 @@ class Order(models.Model):
         return f"Заказ №{self.id} от {self.user.username}"
 
 
-class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items", verbose_name="Заказ")
-    product = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="order_items", verbose_name="Товар")
+class OrderProduct(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="products", verbose_name="Заказ")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="order_products", verbose_name="Товар")
     quantity = models.PositiveIntegerField(default=1, verbose_name="Количество")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, verbose_name="Скидка")
@@ -136,9 +136,9 @@ class Cart(models.Model):
         return f"Корзина пользователя {self.user.username}"
 
 
-class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items", verbose_name="Корзина")
-    product = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="cart_items", verbose_name="Товар")
+class CartProduct(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="product", verbose_name="Корзина")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="cart_products", verbose_name="Товар")
     quantity = models.PositiveIntegerField(default=1, verbose_name="Количество")
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
     crated_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -150,7 +150,7 @@ class CartItem(models.Model):
 
 class Review(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reviews", verbose_name="Пользователь")
-    product = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="reviews", verbose_name="Товар")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="reviews", verbose_name="Товар")
     rating = models.PositiveIntegerField(verbose_name="Рейтинг")
     comment = models.TextField(verbose_name="Комментарий")
     crated_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -165,7 +165,7 @@ class Review(models.Model):
 
 class Wishlist(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="wishlist", verbose_name="Пользователь")
-    product = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="wishlisted_by", verbose_name="Товар")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="wishlisted_by", verbose_name="Товар")
     crated_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
 
     class Meta:
