@@ -11,6 +11,25 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
+
+
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import mixins, permissions, viewsets
+from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
+
+from .models import Address, News, Order, Promotion, Review, Wishlist
+from .serializers import (
+    AddressSerializer,
+    NewsDetailSerializer,
+    NewsListSerializer,
+    OrderSerializer,
+    PromotionSerializer,
+    ReviewSerializer,
+    UserProfileSerializer,
+    WishlistSerializer,
+)
+
 class ProductListView(generics.ListAPIView):
     queryset = Product.objects.filter(is_active=True)
     serializer_class = ProductSerializer
@@ -67,3 +86,138 @@ class ChangePasswordView(APIView):
             return Response({"detail": "Parol muvaffaqiyatli yangilandi."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# ---------- Permission ----------
+class IsOwnerOrReadOnly(permissions.BasePermission):
+    """O'qish hamma uchun, o'zgartirish/o'chirish faqat egasi uchun."""
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return obj.user_id == request.user.id
+
+
+# ---------- 1. User profil: GET / PUT / PATCH /api/profile/ ----------
+class ProfileView(RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "put", "patch", "head", "options"]
+
+    def get_object(self):
+        return self.request.user
+
+
+# ---------- 2. User zakazlari: GET /api/orders/ , /api/orders/{id}/ ----------
+class OrderViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            Order.objects.filter(user=self.request.user)
+            .select_related("address")
+            .prefetch_related("items__product")
+            .order_by("-crated_at")
+        )
+
+
+# ---------- 3. Wishlist: GET, POST, DELETE /api/wishlist/ ----------
+class WishlistViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = WishlistSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            Wishlist.objects.filter(user=self.request.user)
+            .select_related("product")
+            .order_by("-crated_at")
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+# ---------- 4. Dostavka manzili: to'liq CRUD /api/addresses/ ----------
+class AddressViewSet(viewsets.ModelViewSet):
+    serializer_class = AddressSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user).order_by("-is_default", "-crated_at")
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        user = self.request.user
+        # Birinchi manzil avtomatik asosiy bo'ladi
+        if not Address.objects.filter(user=user).exists():
+            serializer.validated_data["is_default"] = True
+        address = serializer.save(user=user)
+        self._ensure_single_default(address)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        address = serializer.save()
+        self._ensure_single_default(address)
+
+    @staticmethod
+    def _ensure_single_default(address):
+        """Faqat bitta manzil asosiy (is_default) bo'lib qolishini ta'minlaydi."""
+        if address.is_default:
+            Address.objects.filter(user=address.user).exclude(pk=address.pk).update(is_default=False)
+
+
+# ---------- 5. Otziv (Review): CRUD /api/reviews/?product=<id> ----------
+class ReviewViewSet(viewsets.ModelViewSet):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+
+    def get_queryset(self):
+        qs = Review.objects.select_related("user", "product").order_by("-crated_at")
+        product_id = self.request.query_params.get("product")
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        # Ro'yxatda faqat o'zimnikini ko'rish: ?mine=1
+        if self.request.query_params.get("mine") and self.request.user.is_authenticated:
+            qs = qs.filter(user=self.request.user)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+# ---------- 6. Aksiya: GET /api/promotions/ ----------
+def get_queryset():
+    now = timezone.now()
+    return Promotion.objects.filter(
+        is_active=True, start_date__lte=now, end_date__gte=now
+    )
+
+
+class PromotionListView(ListAPIView):
+    serializer_class = PromotionSerializer
+    permission_classes = [permissions.AllowAny]
+
+
+# ---------- 7. News: GET /api/news/ , /api/news/{slug}/ ----------
+class NewsViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "slug"
+
+    def get_queryset(self):
+        return News.objects.filter(is_published=True)
+
+    def get_serializer_class(self):
+        return NewsListSerializer if self.action == "list" else NewsDetailSerializer
+
+
+
+
+
+

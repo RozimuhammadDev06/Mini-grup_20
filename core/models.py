@@ -174,3 +174,45 @@ class Wishlist(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.product.name}"
+
+
+
+# Keyin: python manage.py makemigrations && python manage.py migrate
+
+
+class Promotion(models.Model):
+    """Aksiya"""
+    title = models.CharField(max_length=255, verbose_name="Название")
+    description = models.TextField(blank=True, null=True, verbose_name="Описание")
+    image = models.ImageField(upload_to="promotions/", blank=True, null=True, verbose_name="Изображение")
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="Скидка, %")
+    start_date = models.DateTimeField(verbose_name="Начало")
+    end_date = models.DateTimeField(verbose_name="Окончание")
+    is_active = models.BooleanField(default=True, verbose_name="Активна")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        verbose_name = "Акция"
+        verbose_name_plural = "Акции"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
+
+
+class News(models.Model):
+    """Yangilik"""
+    title = models.CharField(max_length=255, verbose_name="Заголовок")
+    slug = models.SlugField(max_length=255, unique=True, verbose_name="Слаг")
+    content = models.TextField(verbose_name="Содержание")
+    image = models.ImageField(upload_to="news/", blank=True, null=True, verbose_name="Изображение")
+    is_published = models.BooleanField(default=True, verbose_name="Опубликовано")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        verbose_name = "Новость"
+        verbose_name_plural = "Новости"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
