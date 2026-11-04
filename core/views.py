@@ -10,6 +10,18 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.models import Token
+from rest_framework.response import Response
+from django.contrib.auth import get_user_model
+from rest_framework import generics, permissions, status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+User = get_user_model()
+
 
 
 
@@ -17,6 +29,44 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import mixins, permissions, viewsets
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
+
+
+
+#      MONONI MAN QILDIM GPT MAS
+from .serializers import RegisterSerializer
+
+
+class RegisterView(generics.CreateAPIView):
+  queryset = User.objects.all()
+  permission_classes = (AllowAny,)
+  serializer_class = RegisterSerializer
+
+
+class LogoutView(APIView):
+  permission_classes = (permissions.IsAuthenticated,)
+
+  def post(self, request):
+    try:
+      refresh_token = request.data.get('refresh')
+      token = RefreshToken(refresh_token)
+      token.blacklist()  # Refresh tokenni yaroqsiz qilish
+      return Response(
+          {'detail': 'Muvaffaqiyatli chiqildi.'}, status=status.HTTP_200_OK
+      )
+    except Exception as e:
+      return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CategoryListView(generics.ListAPIView):
+  queryset = Category.objects.filter(
+      active=True
+  )
+  serializer_class = CategorySerializer
+  permission_classes = [permissions.AllowAny]
+
+
+
+
 
 from .models import Address, News, Order, Promotion, Review, Wishlist
 from .serializers import (
@@ -86,6 +136,20 @@ class ChangePasswordView(APIView):
             return Response({"detail": "Parol muvaffaqiyatli yangilandi."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomObtainAuthToken(ObtainAuthToken):
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user_id': user.pk,
+            'email': user.email
+        })
 
 
 
@@ -199,13 +263,16 @@ def get_queryset():
         is_active=True, start_date__lte=now, end_date__gte=now
     )
 
-
 class PromotionListView(ListAPIView):
     serializer_class = PromotionSerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        now = timezone.now()
+        return Promotion.objects.filter(
+            is_active=True, start_date__lte=now, end_date__gte=now
+        )
 
-# ---------- 7. News: GET /api/news/ , /api/news/{slug}/ ----------
 class NewsViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.AllowAny]
     lookup_field = "slug"
