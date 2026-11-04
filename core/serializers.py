@@ -1,26 +1,44 @@
+from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import Product, Review
 
 
 from .models import (
     Address,
-    Item,
+    Brand,
+    Category,
     News,
     Order,
-    OrderItem,
+    OrderProduct,  # Sizda OrderItem o'rniga OrderProduct ishlatilgan
+    Product,
     Promotion,
     Review,
-    User,
     Wishlist,
 )
 
-class ReviewSerializer(serializers.ModelSerializer):
-    user = serializers.StringRelatedField(read_only=True)
+
+
+
+
+User = get_user_model()
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
 
     class Meta:
-        model = Review
-        fields = ['id', 'user', 'rating', 'comment', 'crated_at']
+        model = User  # <--- Shu yerda model aniq ko'rsatilgan bo'lishi shart!
+        fields = ('username', 'email', 'password')
 
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data.get('email'),
+            password=validated_data['password'],
+        )
+        return user
+
+# ---------- 2. Review Serializer ----------
+class ReviewSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
 
     class Meta:
@@ -29,24 +47,23 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "username", "crated_at"]
 
     def validate(self, attrs):
-        request = self.context["request"]
-        # Yaratishda: bitta tovarga bitta otziv
-        if self.instance is None:
+        request = self.context.get("request")
+        if request and request.method == "POST" and self.instance is None:
             if Review.objects.filter(user=request.user, product=attrs["product"]).exists():
                 raise serializers.ValidationError("Siz bu tovarga allaqachon otziv qoldirgansiz.")
-        # Tahrirlashda tovarni almashtirib bo'lmaydi
-        elif "product" in attrs and attrs["product"] != self.instance.product:
+        elif "product" in attrs and self.instance and attrs["product"] != self.instance.product:
             raise serializers.ValidationError({"product": "Tovarni o'zgartirib bo'lmaydi."})
         return attrs
 
+
+# ---------- 3. Product Serializers ----------
 class ProductDetailSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
-    brand_name = serializers.CharField(source='brand.name', read_only=True)
     reviews = ReviewSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
-        fields = ['id', 'name', 'category_name', 'brand_name', 'desc', 'price', 'discount', 'is_active', 'reviews', 'crated_at']
+        fields = ['id', 'name', 'category_name', 'desc', 'price', 'discount', 'is_active', 'reviews', 'crated_at']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -55,20 +72,26 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+# ---------- 4. Category & Brand Serializers ----------
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'active', 'created']
+
+
+class BrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = ['id', 'name', 'slug', 'logo', 'is_active', 'crated']
+
+
+# ---------- 5. Change Password Serializer ----------
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
 
 
-class CategorySerializer:
-    pass
-
-
-class BrandSerializer:
-    pass
-
-
-# ---------- 1. User profil ----------
+# ---------- 6. User Profile Serializer ----------
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -79,20 +102,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "username", "created_at", "updated_at"]
 
     def validate_email(self, value):
-        qs = User.objects.filter(email__iexact=value).exclude(pk=self.instance.pk)
-        if value and qs.exists():
-            raise serializers.ValidationError("Bu email allaqachon band.")
+        if self.instance and value:
+            qs = User.objects.filter(email__iexact=value).exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("Bu email allaqachon band.")
         return value
 
 
-# ---------- Item (qisqa ko'rinish) ----------
-class ItemShortSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Item
-        fields = ["id", "name", "price", "discount", "is_active"]
-
-
-# ---------- 4. Dostavka manzili ----------
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
@@ -103,32 +119,31 @@ class AddressSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "crated_at"]
 
 
-# ---------- 2. Zakazlar ----------
-class OrderItemSerializer(serializers.ModelSerializer):
-    product = ItemShortSerializer(read_only=True)
+# ---------- 8. Order Serializers ----------
+class OrderProductSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
 
     class Meta:
-        model = OrderItem
-        fields = ["id", "product", "quantity", "price", "discount"]
+        model = OrderProduct
+        fields = ["id", "product", "quantity", "price", "discount", "crated_at"]
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, read_only=True)
+    products = OrderProductSerializer(many=True, read_only=True)
     address = AddressSerializer(read_only=True)
 
     class Meta:
         model = Order
         fields = [
             "id", "status", "address", "total_amount", "payment_method",
-            "payment_status", "items", "crated_at", "updated_at",
+            "payment_status", "products", "crated_at", "updated_at",
         ]
 
 
-# ---------- 3. Wishlist ----------
 class WishlistSerializer(serializers.ModelSerializer):
-    product = ItemShortSerializer(read_only=True)
+    product = ProductSerializer(read_only=True)
     product_id = serializers.PrimaryKeyRelatedField(
-        queryset=Item.objects.filter(is_active=True),
+        queryset=Product.objects.filter(is_active=True),
         source="product",
         write_only=True,
     )
@@ -139,19 +154,13 @@ class WishlistSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "crated_at"]
 
     def validate_product_id(self, product):
-        user = self.context["request"].user
-        if Wishlist.objects.filter(user=user, product=product).exists():
+        request = self.context.get("request")
+        if request and Wishlist.objects.filter(user=request.user, product=product).exists():
             raise serializers.ValidationError("Bu tovar allaqachon sevimlilarda.")
         return product
 
 
-# ---------- 5. Otziv (Review) ----------
-def validate_rating(value):
-    if not 1 <= value <= 5:
-        raise serializers.ValidationError("Reyting 1 dan 5 gacha bo'lishi kerak.")
-    return value
-
-# ---------- 6. Aksiya ----------
+# ---------- 10. Promotion Serializer ----------
 class PromotionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Promotion
@@ -161,7 +170,6 @@ class PromotionSerializer(serializers.ModelSerializer):
         ]
 
 
-# ---------- 7. News ----------
 class NewsListSerializer(serializers.ModelSerializer):
     class Meta:
         model = News

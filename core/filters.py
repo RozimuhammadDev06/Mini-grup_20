@@ -9,4 +9,4 @@ class ProductFilter(django_filters.FilterSet):
 
     class Meta:
         model = Product
-        fields = ['category', 'brand', 'branch', 'is_active', 'min_price', 'max_price']
+        fields = ['category', 'branch', 'is_active', 'min_price', 'max_price']
